@@ -1,274 +1,159 @@
-from flask import Flask, request, jsonify
 import os
 import json
-import logging
-from datetime import datetime
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
-from coach_brain import CoachResponder
+import hashlib
+import hmac
+import base64
+import requests
+from flask import Flask, request, jsonify
 import gspread
 from google.oauth2.service_account import Credentials
-
-# ロギング設定
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+import openai
+from coach_brain import CoachBrain
 
 app = Flask(__name__)
 
-# 環境変数から設定を読み込み
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
+# 環境変数
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+GOOGLE_CREDENTIALS_JSON = os.getenv('GOOGLE_CREDENTIALS_JSON')
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
 
-# LINE Bot設定
-line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(LINE_CHANNEL_SECRET)
+openai.api_key = OPENAI_API_KEY
 
-# Google Sheets設定（環境変数から認証情報を取得）
-try:
-    # 環境変数からGoogle認証情報を読み込み（Render用）
-    google_credentials = os.getenv('GOOGLE_CREDENTIALS')
-    if google_credentials:
-        # JSON文字列をパース
-        creds_dict = json.loads(google_credentials)
-        scope = ['https://www.googleapis.com/auth/spreadsheets']
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        gc = gspread.authorize(creds)
-        sheet = gc.open_by_key(SPREADSHEET_ID).sheet1
-        logger.info("Google Sheets connection established (from environment variables)")
-    else:
-        # ローカル開発用（credentials.jsonファイル）
-        scope = ['https://www.googleapis.com/auth/spreadsheets']
-        creds = Credentials.from_service_account_file('credentials.json', scopes=scope)
-        gc = gspread.authorize(creds)
-        sheet = gc.open_by_key(SPREADSHEET_ID).sheet1
-        logger.info("Google Sheets connection established (from local file)")
-except Exception as e:
-    logger.error(f"Google Sheets connection failed: {e}")
-    gc = None
-    sheet = None
+# Google Sheets設定
+def setup_google_sheets():
+    try:
+        credentials_info = json.loads(GOOGLE_CREDENTIALS_JSON)
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        credentials = Credentials.from_service_account_info(credentials_info, scopes=scope)
+        gc = gspread.authorize(credentials)
+        return gc.open_by_key(SPREADSHEET_ID)
+    except Exception as e:
+        print(f"Google Sheets設定エラー: {e}")
+        return None
 
-# コーチ初期化
-coach = CoachResponder()
+# LINE署名検証
+def verify_line_signature(body, signature):
+    hash = hmac.new(
+        LINE_CHANNEL_SECRET.encode('utf-8'),
+        body,
+        hashlib.sha256
+    ).digest()
+    return hmac.compare_digest(
+        signature,
+        base64.b64encode(hash).decode('utf-8')
+    )
 
-def calculate_graduation_date(school_year, registration_date):
-    """登録時の学年から卒業予定日を自動計算"""
-    reg_year = registration_date.year
-    reg_month = registration_date.month
-    
-    # 学年から卒業までの年数を計算
-    years_to_graduation = {
-        '中学1年': 3, '中学2年': 2, '中学3年': 1,
-        '高校1年': 3, '高校2年': 2, '高校3年': 1
+# LINEメッセージ送信
+def send_line_message(reply_token, message):
+    url = 'https://api.line.me/v2/bot/message/reply'
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {LINE_CHANNEL_ACCESS_TOKEN}'
+    }
+    data = {
+        'replyToken': reply_token,
+        'messages': [{
+            'type': 'text',
+            'text': message
+        }]
     }
     
-    remaining_years = years_to_graduation.get(school_year, 0)
-    
-    # 年度の考え方：4月〜3月が1年度
-    if reg_month >= 4:  # 4月以降の登録
-        graduation_year = reg_year + remaining_years
-    else:  # 1-3月の登録（前年度の続き）
-        graduation_year = reg_year + remaining_years - 1
-    
-    # 卒業は3月とする
-    graduation_date = datetime(graduation_year, 3, 1)
-    return graduation_date
+    response = requests.post(url, headers=headers, json=data)
+    return response.status_code == 200
 
-def save_user_minimal(line_id, display_name, school_year, sport_type, goals=""):
-    """最小限ユーザー情報をGoogle Sheetsに保存"""
-    if not sheet:
-        logger.warning("Google Sheets not available, skipping save")
-        return False
-    
-    try:
-        registration_date = datetime.now()
-        graduation_date = calculate_graduation_date(school_year, registration_date)
-        
-        row_data = [
-            line_id,
-            display_name,
-            school_year,
-            sport_type,
-            goals,
-            registration_date.strftime('%Y-%m-%d'),
-            graduation_date.strftime('%Y-%m-%d'),
-            'active'
-        ]
-        
-        sheet.append_row(row_data)
-        logger.info(f"User saved: {display_name}")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Failed to save user: {e}")
-        return False
-
-def get_user_minimal(line_id):
-    """最小限ユーザー情報をGoogle Sheetsから取得"""
-    if not sheet:
-        return None
-    
+# ユーザーデータ管理
+def get_user_data(user_id, sheet):
     try:
         records = sheet.get_all_records()
-        for record in records:
-            if record.get('line_id') == line_id and record.get('status') == 'active':
-                return record
-        return None
-        
-    except Exception as e:
-        logger.error(f"Failed to get user: {e}")
-        return None
-
-def check_graduation_status(user_data):
-    """自動卒業チェック"""
-    graduation_date_str = user_data.get('graduation_date')
-    if not graduation_date_str:
-        return False
-    
-    try:
-        graduation_date = datetime.strptime(graduation_date_str, '%Y-%m-%d')
-        current_date = datetime.now()
-        return current_date >= graduation_date
+        for row_num, record in enumerate(records, start=2):
+            if record.get('user_id') == user_id:
+                return record, row_num
+        return None, None
     except:
+        return None, None
+
+def save_user_data(user_id, data, sheet):
+    try:
+        user_data, row_num = get_user_data(user_id, sheet)
+        if user_data:
+            # 既存ユーザー更新
+            col = 2  # B列から開始
+            for key, value in data.items():
+                if key != 'user_id':
+                    sheet.update_cell(row_num, col, str(value))
+                    col += 1
+        else:
+            # 新規ユーザー追加
+            row_data = [user_id] + list(data.values())[1:]  # user_id除く
+            sheet.append_row(row_data)
+        return True
+    except Exception as e:
+        print(f"データ保存エラー: {e}")
         return False
 
-def deactivate_user(line_id):
-    """ユーザーを卒業状態に変更"""
-    if not sheet:
-        return
-    
-    try:
-        records = sheet.get_all_values()
-        for i, row in enumerate(records):
-            if len(row) > 0 and row[0] == line_id:  # line_idが一致
-                sheet.update_cell(i + 1, 8, 'graduated')  # status列を更新
-                logger.info(f"User graduated: {line_id}")
-                break
-    except Exception as e:
-        logger.error(f"Failed to deactivate user: {e}")
-
-@app.route("/health", methods=['GET'])
-def health_check():
-    """ヘルスチェックエンドポイント"""
-    return jsonify({
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "sheets_connected": sheet is not None
-    })
-
-@app.route("/callback", methods=['POST'])
+@app.route('/webhook', methods=['POST'])
 def callback():
-    signature = request.headers['X-Line-Signature']
+    # 署名検証
+    signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
     
-    try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        return 'Invalid signature', 400
+    if not verify_line_signature(body.encode('utf-8'), signature):
+        return jsonify({'error': 'Invalid signature'}), 400
     
-    return 'OK'
-
-# 簡易セッション管理
-user_sessions = {}
-
-@handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
     try:
-        user_id = event.source.user_id
-        user_message = event.message.text
+        events = json.loads(body)['events']
+        sheet = setup_google_sheets()
+        if not sheet:
+            return jsonify({'error': 'Sheet connection failed'}), 500
         
-        # ユーザー情報取得
-        profile = line_bot_api.get_profile(user_id)
-        display_name = profile.display_name
-        logger.info(f"Received message from {display_name}: {user_message}")
+        worksheet = sheet.worksheet('ユーザーデータ')
+        coach = CoachBrain()
         
-        # Google Sheetsからユーザー情報取得
-        user_data = get_user_minimal(user_id)
+        for event in events:
+            if event['type'] != 'message' or event['message']['type'] != 'text':
+                continue
+                
+            user_id = event['source']['userId']
+            user_message = event['message']['text']
+            reply_token = event['replyToken']
+            
+            # ユーザーデータ取得
+            user_data, _ = get_user_data(user_id, worksheet)
+            if not user_data:
+                user_data = {
+                    'user_id': user_id,
+                    'level': 'beginner',
+                    'goal': '',
+                    'progress': 0,
+                    'last_interaction': '',
+                    'graduation_ready': False
+                }
+            
+            # AI応答生成
+            response = coach.generate_response(user_message, user_data)
+            
+            # ユーザーデータ更新
+            user_data.update(response.get('user_data_updates', {}))
+            save_user_data(user_id, user_data, worksheet)
+            
+            # 応答送信
+            send_line_message(reply_token, response['message'])
         
-        if user_data:
-            # 既存ユーザーの卒業チェック
-            if check_graduation_status(user_data):
-                deactivate_user(user_id)
-                reply_message = f"""ご卒業おめでとうございます！{display_name}さん
-
-スポーツを通じて培った「壁を乗り越える力」を、社会でも活かしてください。
-
-今後のご活躍を心よりお祈りしています。"""
-            else:
-                # 通常のコーチング応答
-                if any(word in user_message.lower() for word in ['こんにちは', 'おはよう', 'こんばんは', 'はじめまして', 'hello']):
-                    reply_message = f"""こんにちは、{display_name}さん！
-
-下腹部理論を専門とするスポーツコーチです。技術のこと、栄養のこと、メンタル面など、何でもお気軽にご相談ください。"""
-                else:
-                    coach_response = coach.respond(user_message, user_data)
-                    reply_message = coach_response
-        else:
-            # 新規ユーザー登録
-            reply_message = handle_new_user_registration(user_id, user_message, display_name)
-        
-        # 応答送信
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text=reply_message)
-        )
+        return jsonify({'status': 'success'}), 200
         
     except Exception as e:
-        logger.error(f"Error handling message: {e}")
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="申し訳ございませんが、一時的にシステムに問題が発生しています。")
-        )
+        print(f"Webhook処理エラー: {e}")
+        return jsonify({'error': 'Processing failed'}), 500
 
-def handle_new_user_registration(user_id, user_message, display_name):
-    """新規ユーザー登録処理"""
-    if user_id not in user_sessions:
-        user_sessions[user_id] = {'step': 0}
-    
-    session = user_sessions[user_id]
-    step = session.get('step', 0)
-    
-    if step == 0:
-        session['step'] = 1
-        return "学年を教えてください。（例：高校2年、中学3年）"
-    
-    elif step == 1:
-        session['school_year'] = user_message
-        session['step'] = 2
-        return "競技種目を教えてください。（例：野球、サッカー、バスケットボール）"
-    
-    elif step == 2:
-        session['sport_type'] = user_message
-        session['step'] = 3
-        return "目標があれば教えてください。（なければ「なし」と入力）"
-    
-    elif step == 3:
-        goals = user_message if user_message.lower() != 'なし' else ""
-        
-        # Google Sheetsに保存
-        success = save_user_minimal(
-            user_id, display_name, 
-            session['school_year'], 
-            session['sport_type'], 
-            goals
-        )
-        
-        # セッションクリア
-        if user_id in user_sessions:
-            del user_sessions[user_id]
-        
-        if success:
-            return f"""ご登録ありがとうございました！
+@app.route('/')
+def home():
+    return "AI Coach System - Running"
 
-{display_name}さんの{session['sport_type']}を下腹部理論でサポートします。
+@app.route('/health')
+def health():
+    return jsonify({'status': 'healthy'}), 200
 
-何でもお気軽にご相談ください。"""
-        else:
-            return """登録処理で問題が発生しましたが、一時的にコーチング機能をご利用いただけます。
-
-技術のこと、栄養のこと、何でもお気軽にご相談ください。"""
-
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
