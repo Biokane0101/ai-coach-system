@@ -3,3 +3,4 @@ requests==2.31.0
 openai==0.28.1
 gspread==5.10.0
 google-auth==2.23.0
+gunicorn==20.1.0
