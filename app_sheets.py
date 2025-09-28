@@ -7,8 +7,7 @@ import requests
 from flask import Flask, request, jsonify
 import gspread
 from google.oauth2.service_account import Credentials
-import openai
-from coach_brain import CoachBrain
+from coach_brain import CoachResponder, chunk_text
 
 app = Flask(__name__)
 
@@ -18,8 +17,6 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 GOOGLE_CREDENTIALS_JSON = os.getenv('GOOGLE_CREDENTIALS_JSON')
 SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
-
-openai.api_key = OPENAI_API_KEY
 
 # Google Sheets設定
 def setup_google_sheets():
@@ -52,12 +49,20 @@ def send_line_message(reply_token, message):
         'Content-Type': 'application/json',
         'Authorization': f'Bearer {LINE_CHANNEL_ACCESS_TOKEN}'
     }
+    
+    # メッセージが長い場合は分割
+    message_chunks = chunk_text(message, 2000)
+    messages = []
+    
+    for chunk in message_chunks:
+        messages.append({
+            'type': 'text',
+            'text': chunk
+        })
+    
     data = {
         'replyToken': reply_token,
-        'messages': [{
-            'type': 'text',
-            'text': message
-        }]
+        'messages': messages[:5]  # LINEの制限：最大5つまで
     }
     
     response = requests.post(url, headers=headers, json=data)
@@ -109,7 +114,7 @@ def callback():
             return jsonify({'error': 'Sheet connection failed'}), 500
         
         worksheet = sheet.worksheet('ユーザーデータ')
-        coach = CoachBrain()
+        coach = CoachResponder()  # CoachResponderクラスを使用
         
         for event in events:
             if event['type'] != 'message' or event['message']['type'] != 'text':
@@ -131,15 +136,18 @@ def callback():
                     'graduation_ready': False
                 }
             
-            # AI応答生成
-            response = coach.generate_response(user_message, user_data)
+            # AI応答生成（CoachResponder.respondメソッド使用）
+            response = coach.respond(user_message, user_data)
             
-            # ユーザーデータ更新
-            user_data.update(response.get('user_data_updates', {}))
+            # ユーザーデータ更新（簡単な進捗管理）
+            user_data['progress'] = user_data.get('progress', 0) + 1
+            user_data['last_interaction'] = str(datetime.now())
+            
+            # データ保存
             save_user_data(user_id, user_data, worksheet)
             
             # 応答送信
-            send_line_message(reply_token, response['message'])
+            send_line_message(reply_token, response)
         
         return jsonify({'status': 'success'}), 200
         
