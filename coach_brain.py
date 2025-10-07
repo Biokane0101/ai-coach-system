@@ -8,8 +8,13 @@ logger = logging.getLogger(__name__)
 # OpenAI設定（新バージョン対応）
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# あなたの指導哲学を反映した簡潔版システムプロンプト
-PERSONALIZED_COACHING_SYSTEM_PROMPT = """
+class CoachResponder:
+    def __init__(self, app_password="bio2025"):
+        self.conversation_history = {}
+        self.app_password = app_password
+        
+        # あなたの指導哲学を反映した簡潔版システムプロンプト
+        self.system_prompt = f"""
 あなたは下腹部から動かす理論を専門とするスポーツコーチです。技術・栄養・メンタル面から選手をサポートします。
 
 【基本姿勢】
@@ -71,6 +76,13 @@ PERSONALIZED_COACHING_SYSTEM_PROMPT = """
 【怪我対応】
 セルフケア情報＋専門機関相談推奨
 
+【アプリパスワード】
+アプリ（アダロ）のパスワードを聞かれたら：
+「そうですね、アプリのパスワードは「{self.app_password}」です。
+
+パスワードは定期的に変更されますので、わからなくなったらまたお聞きください。」
+と答えてください。
+
 【応答の重要原則】
 - 初回技術相談では長い説明をしない
 - まず相手の具体的状況を1つの質問で確認
@@ -82,10 +94,6 @@ PERSONALIZED_COACHING_SYSTEM_PROMPT = """
 
 このスタイルで、相手に寄り添いながら技術・栄養・人間的成長をサポートしてください。
 """
-
-class CoachResponder:
-    def __init__(self):
-        self.conversation_history = {}
     
     def respond(self, message, user_data=None):
         """ユーザーメッセージに対するあなた専用のコーチング応答生成"""
@@ -93,19 +101,21 @@ class CoachResponder:
             # ユーザー情報があれば個人化された指導を行う
             if user_data:
                 user_id = str(user_data.get('user_id', 'unknown'))
-                level = user_data.get('level', 'beginner')
-                goal = user_data.get('goal', '')
+                grade = user_data.get('grade', '')
+                name = user_data.get('name', '')
+                school = user_data.get('school_name', '')
                 
                 # ユーザー情報を含むコンテキストを追加
                 user_context = f"""
 [相談者情報]
-- レベル: {level}
-- 目標: {goal}
+- 名前: {name}
+- 学校: {school}
+- 学年: {grade}
 """
-                system_prompt_with_context = PERSONALIZED_COACHING_SYSTEM_PROMPT + user_context
+                system_prompt_with_context = self.system_prompt + user_context
             else:
                 user_id = 'anonymous'
-                system_prompt_with_context = PERSONALIZED_COACHING_SYSTEM_PROMPT
+                system_prompt_with_context = self.system_prompt
             
             # 会話履歴を取得（最新5件）
             if user_id not in self.conversation_history:
