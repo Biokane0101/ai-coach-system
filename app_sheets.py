@@ -24,17 +24,16 @@ APP_PASSWORD = "bio2025"
 
 # 有効な学校コード
 VALID_SCHOOL_CODES = {
-    'TEST123': 'テスト中学校',  # テスト用、実際の学校コードに置き換えてください
-    # 新しい契約校を追加する場合はここに追記
+    'TEST2025': 'テスト校',  # テスト用
+    # 実際の契約校を追加する場合は以下の形式で追記
     # 'ABC123': '○○中学校',
-    # 'XYZ789': '△△高等学校',
 }
 
 # 学年リスト
 GRADE_OPTIONS = ['中1', '中2', '中3', '高1', '高2', '高3', '大1', '大2', '大3', '大4', '社会人']
 
 # 初回アンケートURL（実際のURLに置き換えてください）
-INITIAL_SURVEY_URL = "https://forms.gle/xxxxx"
+INITIAL_SURVEY_URL = "https://forms.gle/r5DFKM79aQrdDuZm9"
 
 # Google Sheets設定
 def setup_google_sheets():
