@@ -35,6 +35,35 @@ GRADE_OPTIONS = ['中1', '中2', '中3', '高1', '高2', '高3', '大1', '大2',
 # 初回アンケートURL（実際のURLに置き換えてください）
 INITIAL_SURVEY_URL = "https://forms.gle/r5DFKM79aQrdDuZm9"
 
+# 学年を正規化する関数
+def normalize_grade(input_text):
+    """様々な学年表記を標準形式に変換"""
+    # 全角→半角変換
+    text = input_text.replace('１', '1').replace('２', '2').replace('３', '3').replace('４', '4')
+    text = text.strip()
+    
+    # パターンマッチング
+    grade_patterns = {
+        '中1': ['中1', '中１', '中学1年', '中学１年', '中学1年生', '中学１年生', '中学一年', '中一'],
+        '中2': ['中2', '中２', '中学2年', '中学２年', '中学2年生', '中学２年生', '中学二年', '中二'],
+        '中3': ['中3', '中３', '中学3年', '中学３年', '中学3年生', '中学３年生', '中学三年', '中三'],
+        '高1': ['高1', '高１', '高校1年', '高校１年', '高校1年生', '高校１年生', '高校一年', '高一'],
+        '高2': ['高2', '高２', '高校2年', '高校２年', '高校2年生', '高校２年生', '高校二年', '高二'],
+        '高3': ['高3', '高３', '高校3年', '高校３年', '高校3年生', '高校３年生', '高校三年', '高三'],
+        '大1': ['大1', '大１', '大学1年', '大学１年', '大学1年生', '大学１年生', '大学一年', '大一'],
+        '大2': ['大2', '大２', '大学2年', '大学２年', '大学2年生', '大学２年生', '大学二年', '大二'],
+        '大3': ['大3', '大３', '大学3年', '大学３年', '大学3年生', '大学３年生', '大学三年', '大三'],
+        '大4': ['大4', '大４', '大学4年', '大学４年', '大学4年生', '大学４年生', '大学四年', '大四'],
+        '社会人': ['社会人', '社会人1年目', '社会人2年目', '社会人3年目', '社会人4年目', '社会人5年目']
+    }
+    
+    # マッチング
+    for standard, patterns in grade_patterns.items():
+        if text in patterns:
+            return standard
+    
+    return None  # マッチしなかった場合
+
 # Google Sheets設定
 def setup_google_sheets():
     try:
@@ -251,10 +280,10 @@ def callback():
                     continue
                 
                 # 学年入力待ち
-                if not user_data.get('grade'):
-                    grade = user_message.strip()
-                    if grade in GRADE_OPTIONS:
-                        user_data['grade'] = grade
+　               if not user_data.get('grade'):
+                    normalized_grade = normalize_grade(user_message)
+                    if normalized_grade:
+                        user_data['grade'] = normalized_grade
                         user_data['graduation_year'] = calculate_graduation_year(grade, datetime.now().year)
                         save_user_data(user_id, user_data, worksheet)
                         
