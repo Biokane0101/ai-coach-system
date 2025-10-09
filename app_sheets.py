@@ -280,11 +280,11 @@ def callback():
                     continue
                 
                 # 学年入力待ち
-　               if not user_data.get('grade'):
+                if not user_data.get('grade'):
                     normalized_grade = normalize_grade(user_message)
                     if normalized_grade:
                         user_data['grade'] = normalized_grade
-                        user_data['graduation_year'] = calculate_graduation_year(grade, datetime.now().year)
+                        user_data['graduation_year'] = calculate_graduation_year(normalized_grade, datetime.now().year)
                         save_user_data(user_id, user_data, worksheet)
                         
                         response = """ありがとうございます。
