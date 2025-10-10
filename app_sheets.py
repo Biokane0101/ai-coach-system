@@ -282,6 +282,7 @@ def callback():
                 # 学年入力待ち
                 if not user_data.get('grade'):
                     normalized_grade = normalize_grade(user_message)
+                    print(f"入力: {user_message}, 正規化後: {normalized_grade}")  # ← この行を追加
                     if normalized_grade:
                         user_data['grade'] = normalized_grade
                         user_data['graduation_year'] = calculate_graduation_year(normalized_grade, datetime.now().year)
