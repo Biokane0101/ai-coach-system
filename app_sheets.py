@@ -290,10 +290,13 @@ def callback():
                     user_data['status'] = 'active'
                     save_user_data(user_id, user_data, worksheet)
                     
+                    # LINE IDを埋め込んだアンケートURL
+                    survey_url = get_survey_url_with_user_id(user_id)
+                    
                     response = f"""登録完了しました！
 
 まずは初回アンケートにご協力ください：
-{INITIAL_SURVEY_URL}
+{survey_url}
 
 ご不明な点があれば、いつでもお聞きください。"""
                     send_line_message(reply_token, response)
