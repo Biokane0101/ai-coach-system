@@ -159,7 +159,9 @@ def check_registration_status(user_data):
         return 'not_registered'
     if user_data.get('status') == 'graduated':
         return 'graduated'
-    if not user_data.get('school_code'):
+    if user_data.get('status') == 'registering':
+        return 'incomplete'
+    if not user_data.get('school_code') or not user_data.get('grade') or not user_data.get('name'):
         return 'incomplete'
     return 'active'
 
