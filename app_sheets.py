@@ -248,7 +248,7 @@ def callback():
                 continue
             
             # 登録フロー
-            if not user_data or reg_status in ['not_registered', 'incomplete'] or user_data.get('status') == 'registering':
+            if not user_data or reg_status in ['not_registered', 'incomplete']:
                 if not user_data:
                     user_data = {
                         'user_id': user_id,
