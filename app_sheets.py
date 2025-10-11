@@ -39,8 +39,13 @@ C: 3年生（卒業まで1年）- 中3、高3、大4
 D: 大学1年生（卒業まで4年）
 E: 社会人"""
 
-# 初回アンケートURL（実際のURLに置き換えてください）
-INITIAL_SURVEY_URL = "https://forms.gle/r5DFKM79aQrdDuZm9"
+# 初回アンケートURL（ベースURL）
+INITIAL_SURVEY_BASE_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdTTcEQr8irSOVUKs__0CAPyBDBEQbJt2p4_V6x33aMukeqSg/viewform"
+INITIAL_SURVEY_ENTRY_ID = "entry.1948261894"
+
+def get_survey_url_with_user_id(user_id):
+    """LINE IDを埋め込んだアンケートURLを生成"""
+    return f"{INITIAL_SURVEY_BASE_URL}?usp=pp_url&{INITIAL_SURVEY_ENTRY_ID}={user_id}"
 
 # Google Sheets設定
 def setup_google_sheets():
