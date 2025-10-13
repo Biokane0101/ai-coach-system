@@ -47,6 +47,14 @@ def get_survey_url_with_user_id(user_id):
     """LINE IDを埋め込んだアンケートURLを生成"""
     return f"{INITIAL_SURVEY_BASE_URL}?usp=pp_url&{INITIAL_SURVEY_ENTRY_ID}={user_id}"
 
+# 効果測定用アンケートURL（ベースURL）
+FOLLOWUP_SURVEY_BASE_URL = "https://docs.google.com/forms/d/e/1FAIpQLSc50ciUyIkxiGR7gX2nUq28Pk4WGhNRM8elGCziPvo20EcH8A/viewform"
+FOLLOWUP_SURVEY_ENTRY_ID = "entry.1458350498"
+
+def get_followup_survey_url_with_user_id(user_id):
+    """LINE IDを埋め込んだ効果測定アンケートURLを生成"""
+    return f"{FOLLOWUP_SURVEY_BASE_URL}?usp=pp_url&{FOLLOWUP_SURVEY_ENTRY_ID}={user_id}"
+
 # Google Sheets設定
 def setup_google_sheets():
     try:
@@ -299,6 +307,18 @@ def callback():
 {survey_url}
 
 ご不明な点があれば、いつでもお聞きください。"""
+                    send_line_message(reply_token, response)
+                    continue
+
+# アンケート要求への応答
+            if reg_status == 'active':
+                if 'アンケート' in user_message or '効果測定' in user_message:
+                    survey_url = get_followup_survey_url_with_user_id(user_id)
+                    response = f"""効果測定アンケートはこちらです：
+
+{survey_url}
+
+ご協力ありがとうございます。"""
                     send_line_message(reply_token, response)
                     continue
             
