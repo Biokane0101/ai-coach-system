@@ -199,6 +199,7 @@ def callback():
         for event in events:
             # 友だち追加イベント
             if event['type'] == 'follow':
+                print(f"友だち追加イベント検知: {event}")  # デバッグ用
                 reply_token = event['replyToken']
                 user_id = event['source']['userId']
                 
