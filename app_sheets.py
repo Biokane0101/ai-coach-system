@@ -24,9 +24,7 @@ APP_PASSWORD = "bio2025"
 
 # 有効な学校コード
 VALID_SCHOOL_CODES = {
-    'TEST2025': 'テスト校',  # テスト用
-    # 実際の契約校を追加する場合は以下の形式で追記
-    # 'ABC123': '○○中学校',
+    'TEST2025': 'テスト校',
 }
 
 # 学年リスト
@@ -99,7 +97,7 @@ def send_line_message(reply_token, message):
     
     data = {
         'replyToken': reply_token,
-        'messages': messages[:5]  # LINEの制限：最大5つまで
+        'messages': messages[:5]
     }
     
     response = requests.post(url, headers=headers, json=data)
@@ -155,15 +153,15 @@ def save_user_data(user_id, data, sheet):
 # 卒業年度計算
 def calculate_graduation_year(grade, current_year):
     grade_map = {
-        'A': 3,  # 卒業まで3年
-        'B': 2,  # 卒業まで2年
-        'C': 1,  # 卒業まで1年
-        'D': 4,  # 大学1年、卒業まで4年
-        'E': 999  # 社会人、卒業なし
+        'A': 3,
+        'B': 2,
+        'C': 1,
+        'D': 4,
+        'E': 999
     }
     years_left = grade_map.get(grade, 999)
     if years_left == 999:
-        return 9999  # 社会人は卒業なし
+        return 9999
     return current_year + years_left
 
 # 登録状態の確認
@@ -199,7 +197,7 @@ def callback():
         for event in events:
             # 友だち追加イベント
             if event['type'] == 'follow':
-                print(f"友だち追加イベント検知: {event}")  # デバッグ用
+                print(f"友だち追加イベント検知: {event}")
                 reply_token = event['replyToken']
                 user_id = event['source']['userId']
                 
@@ -221,16 +219,23 @@ def callback():
             # メッセージイベント
             if event['type'] != 'message' or event['message']['type'] != 'text':
                 continue
-                
+            
+            # デバッグ用ログ追加
             user_id = event['source']['userId']
             user_message = event['message']['text']
             reply_token = event['replyToken']
             
+            print(f"========== メッセージ受信 ==========")
+            print(f"ユーザーID: {user_id}")
+            print(f"メッセージ: {user_message}")
+            
             # ユーザーデータ取得
             user_data, _ = get_user_data(user_id, worksheet)
+            print(f"ユーザーデータ: {user_data}")
             
             # 登録状態確認
             reg_status = check_registration_status(user_data)
+            print(f"登録状態: {reg_status}")
             
             # 卒業済みユーザー
             if reg_status == 'graduated':
@@ -276,7 +281,7 @@ def callback():
                 
                 # 学年入力待ち
                 if not user_data.get('grade'):
-                    grade_input = user_message.strip().upper()  # 大文字に統一
+                    grade_input = user_message.strip().upper()
                     if grade_input in GRADE_OPTIONS:
                         user_data['grade'] = grade_input
                         user_data['graduation_year'] = calculate_graduation_year(grade_input, datetime.now().year)
@@ -295,9 +300,11 @@ def callback():
                 
                 # 名前入力待ち
                 if not user_data.get('name'):
+                    print(f"名前登録処理開始: {user_message}")
                     user_data['name'] = user_message.strip()
                     user_data['status'] = 'active'
                     save_user_data(user_id, user_data, worksheet)
+                    print(f"名前登録完了: {user_data['name']}")
                     
                     # LINE IDを埋め込んだアンケートURL
                     survey_url = get_survey_url_with_user_id(user_id)
@@ -310,8 +317,8 @@ def callback():
 ご不明な点があれば、いつでもお聞きください。"""
                     send_line_message(reply_token, response)
                     continue
-
-# アンケート要求への応答
+            
+            # アンケート要求への応答（登録完了後）
             if reg_status == 'active':
                 if 'アンケート' in user_message or '効果測定' in user_message:
                     survey_url = get_followup_survey_url_with_user_id(user_id)
@@ -322,11 +329,11 @@ def callback():
 ご協力ありがとうございます。"""
                     send_line_message(reply_token, response)
                     continue
-            
-            # 通常の会話（登録完了後）
-            if reg_status == 'active':
-                # AI応答生成
+                
+                # 通常の会話（AI応答）
+                print(f"AI応答生成開始")
                 response = coach.respond(user_message, user_data)
+                print(f"AI応答: {response[:100]}...")
                 
                 # ユーザーデータ更新
                 user_data['progress'] = user_data.get('progress', 0) + 1
@@ -340,6 +347,8 @@ def callback():
         
     except Exception as e:
         print(f"Webhook処理エラー: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': 'Processing failed'}), 500
 
 @app.route('/')
