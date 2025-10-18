@@ -170,9 +170,15 @@ def check_registration_status(user_data):
         return 'not_registered'
     if user_data.get('status') == 'graduated':
         return 'graduated'
-    if user_data.get('status') == 'registering':
+    if user_data.get('status') in ['selecting_type', 'registering']:
         return 'incomplete'
-    if not user_data.get('school_code') or not user_data.get('grade') or not user_data.get('name'):
+    if not user_data.get('name'):
+        return 'incomplete'
+    # 個人契約の場合は名前のみでOK
+    if user_data.get('graduation_year') == 9999:
+        return 'active'
+    # 学校契約の場合は全項目必要
+    if not user_data.get('school_code') or not user_data.get('grade'):
         return 'incomplete'
     return 'active'
 
@@ -203,14 +209,19 @@ def callback():
                 
                 welcome_message = """ご登録ありがとうございます！
 
-まず、学校から配布された登録コードを入力してください。"""
+契約タイプを選んでください：
+
+1. 個人契約
+2. 学校・チーム契約
+
+番号を入力してください。"""
                 
                 send_line_message(reply_token, welcome_message)
                 
-                # 仮登録
+                # 仮登録（契約タイプ選択待ち）
                 save_user_data(user_id, {
                     'user_id': user_id,
-                    'status': 'registering',
+                    'status': 'selecting_type',
                     'progress': 0,
                     'last_interaction': str(datetime.now())
                 }, worksheet)
@@ -252,9 +263,66 @@ def callback():
                 if not user_data:
                     user_data = {
                         'user_id': user_id,
-                        'status': 'registering',
+                        'status': 'selecting_type',
                         'progress': 0
                     }
+                
+                # 契約タイプ選択待ち
+                if user_data.get('status') == 'selecting_type':
+                    contract_type = user_message.strip()
+                    
+                    if contract_type == '1':
+                        # 個人契約
+                        user_data['school_code'] = 'PERSONAL'
+                        user_data['school_name'] = '個人契約'
+                        user_data['grade'] = '個人'
+                        user_data['enrollment_year'] = datetime.now().year
+                        user_data['graduation_year'] = 9999
+                        user_data['status'] = 'registering_personal'
+                        save_user_data(user_id, user_data, worksheet)
+                        
+                        response = """個人契約を選択されました。
+
+お名前またはニックネームを教えてください。"""
+                        send_line_message(reply_token, response)
+                    
+                    elif contract_type == '2':
+                        # 学校・チーム契約
+                        user_data['status'] = 'registering'
+                        save_user_data(user_id, user_data, worksheet)
+                        
+                        response = """学校・チーム契約を選択されました。
+
+学校から配布された登録コードを入力してください。"""
+                        send_line_message(reply_token, response)
+                    
+                    else:
+                        response = """正しい番号を選んでください：
+
+1. 個人契約
+2. 学校・チーム契約"""
+                        send_line_message(reply_token, response)
+                    continue
+                
+                # 個人契約の名前入力
+                if user_data.get('status') == 'registering_personal':
+                    print(f"個人契約：名前登録処理開始: {user_message}")
+                    user_data['name'] = user_message.strip()
+                    user_data['status'] = 'active'
+                    save_user_data(user_id, user_data, worksheet)
+                    print(f"個人契約：名前登録完了: {user_data['name']}")
+                    
+                    # LINE IDを埋め込んだアンケートURL
+                    survey_url = get_survey_url_with_user_id(user_id)
+                    
+                    response = f"""登録完了しました！
+
+まずは初回アンケートにご協力ください：
+{survey_url}
+
+ご不明な点があれば、いつでもお聞きください。"""
+                    send_line_message(reply_token, response)
+                    continue
                 
                 # 学校コード入力待ち
                 if not user_data.get('school_code'):
@@ -263,6 +331,7 @@ def callback():
                         user_data['school_code'] = code
                         user_data['school_name'] = VALID_SCHOOL_CODES[code]
                         user_data['enrollment_year'] = datetime.now().year
+                        user_data['status'] = 'registering'
                         save_user_data(user_id, user_data, worksheet)
                         
                         response = f"""登録コードを確認しました。
