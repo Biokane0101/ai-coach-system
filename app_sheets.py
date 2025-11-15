@@ -22,21 +22,6 @@ SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
 # アプリパスワード
 APP_PASSWORD = "bio2025"
 
-# 有効な学校コード
-VALID_SCHOOL_CODES = {
-    'TEST2025': 'テスト校',
-}
-
-# 学年リスト
-GRADE_OPTIONS = ['A', 'B', 'C', 'D', 'E']
-
-# 学年の説明
-GRADE_DESCRIPTION = """A: 1年生（卒業まで3年）- 中1、高1、大2
-B: 2年生（卒業まで2年）- 中2、高2、大3
-C: 3年生（卒業まで1年）- 中3、高3、大4
-D: 大学1年生（卒業まで4年）
-E: 社会人"""
-
 # 初回アンケートURL（ベースURL）
 INITIAL_SURVEY_BASE_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdTTcEQr8irSOVUKs__0CAPyBDBEQbJt2p4_V6x33aMukeqSg/viewform"
 INITIAL_SURVEY_ENTRY_ID = "entry.1948261894"
@@ -119,68 +104,32 @@ def save_user_data(user_id, data, sheet):
         user_data, row_num = get_user_data(user_id, sheet)
         if user_data:
             # 既存ユーザー更新
-            sheet.update(f'A{row_num}:J{row_num}', [[
+            sheet.update(f'A{row_num}:H{row_num}', [[
                 data.get('user_id', ''),
-                data.get('school_code', ''),
-                data.get('school_name', ''),
-                data.get('grade', ''),
                 data.get('name', ''),
-                data.get('enrollment_year', ''),
-                data.get('graduation_year', ''),
-                data.get('status', 'active'),
-                data.get('progress', 0),
-                data.get('last_interaction', '')
+                data.get('registration_date', ''),
+                data.get('concern_target', ''),
+                data.get('concern_description', ''),
+                data.get('concern_duration', ''),
+                data.get('concern_score', ''),
+                data.get('concern_date', '')
             ]])
         else:
             # 新規ユーザー追加
             sheet.append_row([
                 data.get('user_id', ''),
-                data.get('school_code', ''),
-                data.get('school_name', ''),
-                data.get('grade', ''),
                 data.get('name', ''),
-                data.get('enrollment_year', ''),
-                data.get('graduation_year', ''),
-                data.get('status', 'active'),
-                data.get('progress', 0),
-                data.get('last_interaction', '')
+                data.get('registration_date', ''),
+                data.get('concern_target', ''),
+                data.get('concern_description', ''),
+                data.get('concern_duration', ''),
+                data.get('concern_score', ''),
+                data.get('concern_date', '')
             ])
         return True
     except Exception as e:
         print(f"データ保存エラー: {e}")
         return False
-
-# 卒業年度計算
-def calculate_graduation_year(grade, current_year):
-    grade_map = {
-        'A': 3,
-        'B': 2,
-        'C': 1,
-        'D': 4,
-        'E': 999
-    }
-    years_left = grade_map.get(grade, 999)
-    if years_left == 999:
-        return 9999
-    return current_year + years_left
-
-# 登録状態の確認
-def check_registration_status(user_data):
-    if not user_data:
-        return 'not_registered'
-    if user_data.get('status') == 'graduated':
-        return 'graduated'
-    if user_data.get('status') in ['selecting_type', 'registering']:
-        return 'incomplete'
-    if not user_data.get('name'):
-        return 'incomplete'
-    # 個人契約の場合は名前のみでOK
-    if user_data.get('graduation_year') == 9999:
-        return 'active'
-    # 学校契約の場合は全項目必要
-    if not user_data.get('school_code') or not user_data.get('grade'):
-        return 'incomplete'
-    return 'active'
 
 @app.route('/webhook', methods=['POST'])
 def callback():
@@ -209,21 +158,14 @@ def callback():
                 
                 welcome_message = """ご登録ありがとうございます！
 
-契約タイプを選んでください：
-
-1. 個人契約
-2. 学校・チーム契約
-
-番号を入力してください。"""
+お名前またはニックネームを教えてください。"""
                 
                 send_line_message(reply_token, welcome_message)
                 
-                # 仮登録（契約タイプ選択待ち）
+                # 仮登録
                 save_user_data(user_id, {
                     'user_id': user_id,
-                    'status': 'selecting_type',
-                    'progress': 0,
-                    'last_interaction': str(datetime.now())
+                    'registration_date': str(datetime.now())
                 }, worksheet)
                 continue
             
@@ -231,7 +173,6 @@ def callback():
             if event['type'] != 'message' or event['message']['type'] != 'text':
                 continue
             
-            # デバッグ用ログ追加
             user_id = event['source']['userId']
             user_message = event['message']['text']
             reply_token = event['replyToken']
@@ -244,173 +185,147 @@ def callback():
             user_data, _ = get_user_data(user_id, worksheet)
             print(f"ユーザーデータ: {user_data}")
             
-            # 登録状態確認
-            reg_status = check_registration_status(user_data)
-            print(f"登録状態: {reg_status}")
-            
-            # 卒業済みユーザー
-            if reg_status == 'graduated':
-                response = """申し訳ございません。
+            # 登録フロー
+            if not user_data or not user_data.get('name'):
+                # 名前入力待ち
+                if not user_data:
+                    user_data = {'user_id': user_id, 'registration_date': str(datetime.now())}
+                
+                user_data['name'] = user_message.strip()
+                save_user_data(user_id, user_data, worksheet)
+                
+                response = """ありがとうございます。
 
-ご卒業されたため、サポートを終了させていただいております。
+簡単な質問に答えてください。
 
-新しい学校でもご利用になりたい場合は、一度ブロックしていただき、新しい登録コードで再度ご登録ください。"""
+この悩みは誰についてですか？
+数字で答えてください：
+
+1. 自分自身
+2. 子供（小学生）
+3. 子供（中学生）
+4. 子供（高校生）
+5. 子供（大学生・社会人）"""
                 send_line_message(reply_token, response)
                 continue
             
-            # 登録フロー
-            if not user_data or reg_status in ['not_registered', 'incomplete']:
-                if not user_data:
-                    user_data = {
-                        'user_id': user_id,
-                        'status': 'selecting_type',
-                        'progress': 0
-                    }
-                
-                # 契約タイプ選択待ち
-                if user_data.get('status') == 'selecting_type':
-                    contract_type = user_message.strip()
-                    
-                    if contract_type == '1':
-                        # 個人契約
-                        user_data['school_code'] = 'PERSONAL'
-                        user_data['school_name'] = '個人契約'
-                        user_data['grade'] = '個人'
-                        user_data['enrollment_year'] = datetime.now().year
-                        user_data['graduation_year'] = 9999
-                        user_data['status'] = 'registering_personal'
-                        save_user_data(user_id, user_data, worksheet)
-                        
-                        response = """個人契約を選択されました。
-
-お名前またはニックネームを教えてください。"""
-                        send_line_message(reply_token, response)
-                    
-                    elif contract_type == '2':
-                        # 学校・チーム契約
-                        user_data['status'] = 'registering'
-                        save_user_data(user_id, user_data, worksheet)
-                        
-                        response = """学校・チーム契約を選択されました。
-
-学校から配布された登録コードを入力してください。"""
-                        send_line_message(reply_token, response)
-                    
-                    else:
-                        response = """正しい番号を選んでください：
-
-1. 個人契約
-2. 学校・チーム契約"""
-                        send_line_message(reply_token, response)
-                    continue
-                
-                # 個人契約の名前入力
-                if user_data.get('status') == 'registering_personal':
-                    print(f"個人契約：名前登録処理開始: {user_message}")
-                    user_data['name'] = user_message.strip()
-                    user_data['status'] = 'active'
+            # 質問1: 対象者
+            if not user_data.get('concern_target'):
+                target = user_message.strip()
+                if target in ['1', '2', '3', '4', '5']:
+                    user_data['concern_target'] = target
                     save_user_data(user_id, user_data, worksheet)
-                    print(f"個人契約：名前登録完了: {user_data['name']}")
                     
-                    # LINE IDを埋め込んだアンケートURL
-                    survey_url = get_survey_url_with_user_id(user_id)
-                    
-                    response = f"""登録完了しました！
+                    response = """ありがとうございます。
 
-まずは初回アンケートにご協力ください：
-{survey_url}
+何に悩んでいますか？
+自由に答えてください。
 
-ご不明な点があれば、いつでもお聞きください。"""
+（例：子供が落ち着きがない、姿勢が悪い、シュートが入らない、など）"""
                     send_line_message(reply_token, response)
-                    continue
-                
-                # 学校コード入力待ち
-                if not user_data.get('school_code'):
-                    code = user_message.strip().upper()
-                    if code in VALID_SCHOOL_CODES:
-                        user_data['school_code'] = code
-                        user_data['school_name'] = VALID_SCHOOL_CODES[code]
-                        user_data['enrollment_year'] = datetime.now().year
-                        user_data['status'] = 'registering'
-                        save_user_data(user_id, user_data, worksheet)
-                        
-                        response = f"""登録コードを確認しました。
+                else:
+                    response = """1〜5の数字で答えてください：
 
-次に、学年を選んでください。
-以下のA〜Eから選んで入力してください：
-
-{GRADE_DESCRIPTION}"""
-                        send_line_message(reply_token, response)
-                    else:
-                        response = """無効な登録コードです。
-
-学校の担当者にお問い合わせいただき、正しい登録コードをご確認ください。"""
-                        send_line_message(reply_token, response)
-                    continue
-                
-                # 学年入力待ち
-                if not user_data.get('grade'):
-                    grade_input = user_message.strip().upper()
-                    if grade_input in GRADE_OPTIONS:
-                        user_data['grade'] = grade_input
-                        user_data['graduation_year'] = calculate_graduation_year(grade_input, datetime.now().year)
-                        save_user_data(user_id, user_data, worksheet)
-                        
-                        response = """ありがとうございます。
-
-最後に、名前またはニックネームを教えてください。"""
-                        send_line_message(reply_token, response)
-                    else:
-                        response = f"""正しい学年を選んでください：
-
-{GRADE_DESCRIPTION}"""
-                        send_line_message(reply_token, response)
-                    continue
-                
-                # 名前入力待ち
-                if not user_data.get('name'):
-                    print(f"名前登録処理開始: {user_message}")
-                    user_data['name'] = user_message.strip()
-                    user_data['status'] = 'active'
-                    save_user_data(user_id, user_data, worksheet)
-                    print(f"名前登録完了: {user_data['name']}")
-                    
-                    # LINE IDを埋め込んだアンケートURL
-                    survey_url = get_survey_url_with_user_id(user_id)
-                    
-                    response = f"""登録完了しました！
-
-まずは初回アンケートにご協力ください：
-{survey_url}
-
-ご不明な点があれば、いつでもお聞きください。"""
+1. 自分自身
+2. 子供（小学生）
+3. 子供（中学生）
+4. 子供（高校生）
+5. 子供（大学生・社会人）"""
                     send_line_message(reply_token, response)
-                    continue
+                continue
             
-            # アンケート要求への応答（登録完了後）
-            if reg_status == 'active':
-                if 'アンケート' in user_message or '効果測定' in user_message:
-                    survey_url = get_followup_survey_url_with_user_id(user_id)
-                    response = f"""効果測定アンケートはこちらです：
+            # 質問2: 悩みの内容
+            if not user_data.get('concern_description'):
+                user_data['concern_description'] = user_message.strip()
+                save_user_data(user_id, user_data, worksheet)
+                
+                response = """ありがとうございます。
+
+いつから気になっていますか？
+数字で答えてください：
+
+1. 最近（1ヶ月以内）
+2. 数ヶ月前から
+3. 半年以上前から
+4. ずっと"""
+                send_line_message(reply_token, response)
+                continue
+            
+            # 質問3: 期間
+            if not user_data.get('concern_duration'):
+                duration = user_message.strip()
+                if duration in ['1', '2', '3', '4']:
+                    user_data['concern_duration'] = duration
+                    save_user_data(user_id, user_data, worksheet)
+                    
+                    response = """ありがとうございます。
+
+最後の質問です。
+
+今の悩み度を1〜10で教えてください。
+1=とても悪い
+10=とても良い"""
+                    send_line_message(reply_token, response)
+                else:
+                    response = """1〜4の数字で答えてください：
+
+1. 最近（1ヶ月以内）
+2. 数ヶ月前から
+3. 半年以上前から
+4. ずっと"""
+                    send_line_message(reply_token, response)
+                continue
+            
+            # 質問4: 悩み度
+            if not user_data.get('concern_score'):
+                score = user_message.strip()
+                if score.isdigit() and 1 <= int(score) <= 10:
+                    user_data['concern_score'] = score
+                    user_data['concern_date'] = str(datetime.now())
+                    save_user_data(user_id, user_data, worksheet)
+                    
+                    # LINE IDを埋め込んだアンケートURL
+                    survey_url = get_survey_url_with_user_id(user_id)
+                    
+                    response = f"""ありがとうございました。
+記録しました。
+
+1ヶ月後に変化を確認させていただきます。
+
+初回アンケートはこちら：
+{survey_url}
+
+アンケート回答後、時間を置いてから相談すると返答に時間がかかることがあります。
+その際は数分程度置いてから、もう一度送信をお願いします。
+
+ご不明な点があれば、いつでもお聞きください。"""
+                    send_line_message(reply_token, response)
+                else:
+                    response = """1〜10の数字で答えてください。
+
+1=とても悪い
+10=とても良い"""
+                    send_line_message(reply_token, response)
+                continue
+            
+            # アンケート要求への応答
+            if 'アンケート' in user_message or '効果測定' in user_message:
+                survey_url = get_followup_survey_url_with_user_id(user_id)
+                response = f"""効果測定アンケートはこちらです：
 
 {survey_url}
 
 ご協力ありがとうございます。"""
-                    send_line_message(reply_token, response)
-                    continue
-                
-                # 通常の会話（AI応答）
-                print(f"AI応答生成開始")
-                response = coach.respond(user_message, user_data)
-                print(f"AI応答: {response[:100]}...")
-                
-                # ユーザーデータ更新
-                user_data['progress'] = user_data.get('progress', 0) + 1
-                user_data['last_interaction'] = str(datetime.now())
-                save_user_data(user_id, user_data, worksheet)
-                
-                # 応答送信
                 send_line_message(reply_token, response)
+                continue
+            
+            # 通常の会話（登録完了後）
+            print(f"AI応答生成開始")
+            response = coach.respond(user_message, user_data)
+            print(f"AI応答: {response[:100]}...")
+            
+            # 応答送信
+            send_line_message(reply_token, response)
         
         return jsonify({'status': 'success'}), 200
         
