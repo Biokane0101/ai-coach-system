@@ -104,11 +104,12 @@ def save_user_data(user_id, data, sheet):
         user_data, row_num = get_user_data(user_id, sheet)
         if user_data:
             # 既存ユーザー更新
-            sheet.update(f'A{row_num}:H{row_num}', [[
+            sheet.update(f'A{row_num}:I{row_num}', [[
                 data.get('user_id', ''),
                 data.get('name', ''),
                 data.get('registration_date', ''),
                 data.get('concern_target', ''),
+                data.get('target_detail', ''),
                 data.get('concern_description', ''),
                 data.get('concern_duration', ''),
                 data.get('concern_score', ''),
@@ -121,6 +122,7 @@ def save_user_data(user_id, data, sheet):
                 data.get('name', ''),
                 data.get('registration_date', ''),
                 data.get('concern_target', ''),
+                data.get('target_detail', ''),
                 data.get('concern_description', ''),
                 data.get('concern_duration', ''),
                 data.get('concern_score', ''),
@@ -216,13 +218,48 @@ def callback():
                     user_data['concern_target'] = target
                     save_user_data(user_id, user_data, worksheet)
                     
-                    response = """ありがとうございます。
+                    # 子供の場合は学年を聞く
+                    if target in ['2', '3', '4']:  # 小学生、中学生、高校生
+                        if target == '2':
+                            response = """ありがとうございます。
+
+何年生ですか？
+1〜6の数字で答えてください。
+
+1. 小学1年
+2. 小学2年
+3. 小学3年
+4. 小学4年
+5. 小学5年
+6. 小学6年"""
+                        elif target == '3':
+                            response = """ありがとうございます。
+
+何年生ですか？
+1〜3の数字で答えてください。
+
+1. 中学1年
+2. 中学2年
+3. 中学3年"""
+                        elif target == '4':
+                            response = """ありがとうございます。
+
+何年生ですか？
+1〜3の数字で答えてください。
+
+1. 高校1年
+2. 高校2年
+3. 高校3年"""
+                        send_line_message(reply_token, response)
+                    else:
+                        # 自分自身、または大学生・社会人の場合は学年不要
+                        response = """ありがとうございます。
 
 何に悩んでいますか？
 自由に答えてください。
 
-（例：子供が落ち着きがない、姿勢が悪い、シュートが入らない、など）"""
-                    send_line_message(reply_token, response)
+（例：落ち着きがない、姿勢が悪い、シュートが入らない、など）"""
+                        send_line_message(reply_token, response)
                 else:
                     response = """1〜5の数字で答えてください：
 
@@ -234,8 +271,65 @@ def callback():
                     send_line_message(reply_token, response)
                 continue
             
+            # 質問1-2: 学年（子供の場合のみ）
+            if user_data.get('concern_target') in ['2', '3', '4'] and not user_data.get('target_detail'):
+                grade = user_message.strip()
+                target = user_data.get('concern_target')
+                
+                # 小学生: 1〜6
+                if target == '2' and grade in ['1', '2', '3', '4', '5', '6']:
+                    user_data['target_detail'] = f"小{grade}"
+                    save_user_data(user_id, user_data, worksheet)
+                    
+                    response = """ありがとうございます。
+
+何に悩んでいますか？
+自由に答えてください。
+
+（例：落ち着きがない、姿勢が悪い、シュートが入らない、など）"""
+                    send_line_message(reply_token, response)
+                
+                # 中学生: 1〜3
+                elif target == '3' and grade in ['1', '2', '3']:
+                    user_data['target_detail'] = f"中{grade}"
+                    save_user_data(user_id, user_data, worksheet)
+                    
+                    response = """ありがとうございます。
+
+何に悩んでいますか？
+自由に答えてください。
+
+（例：落ち着きがない、姿勢が悪い、シュートが入らない、など）"""
+                    send_line_message(reply_token, response)
+                
+                # 高校生: 1〜3
+                elif target == '4' and grade in ['1', '2', '3']:
+                    user_data['target_detail'] = f"高{grade}"
+                    save_user_data(user_id, user_data, worksheet)
+                    
+                    response = """ありがとうございます。
+
+何に悩んでいますか？
+自由に答えてください。
+
+（例：落ち着きがない、姿勢が悪い、シュートが入らない、など）"""
+                    send_line_message(reply_token, response)
+                
+                else:
+                    # 範囲外の数字
+                    if target == '2':
+                        response = """1〜6の数字で答えてください。"""
+                    else:
+                        response = """1〜3の数字で答えてください。"""
+                    send_line_message(reply_token, response)
+                continue
+            
             # 質問2: 悩みの内容
-            if not user_data.get('concern_description'):
+            if user_data.get('concern_target') and not user_data.get('concern_description'):
+                # 学年が必要なのに未入力の場合はスキップ
+                if user_data.get('concern_target') in ['2', '3', '4'] and not user_data.get('target_detail'):
+                    continue
+                
                 user_data['concern_description'] = user_message.strip()
                 save_user_data(user_id, user_data, worksheet)
                 
@@ -263,8 +357,8 @@ def callback():
 最後の質問です。
 
 今の悩み度を1〜10で教えてください。
-1=とても悪い
-10=とても良い"""
+1=とても良い
+10=とても悪い"""
                     send_line_message(reply_token, response)
                 else:
                     response = """1〜4の数字で答えてください：
@@ -303,8 +397,8 @@ def callback():
                 else:
                     response = """1〜10の数字で答えてください。
 
-1=とても悪い
-10=とても良い"""
+1=とても良い
+10=とても悪い"""
                     send_line_message(reply_token, response)
                 continue
             
