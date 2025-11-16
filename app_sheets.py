@@ -213,18 +213,57 @@ def callback():
             
             # 質問1: 対象者
             if not user_data.get('concern_target'):
+                print(f"質問1処理: 対象者選択")
                 target = user_message.strip()
                 if target in ['1', '2', '3', '4', '5']:
                     user_data['concern_target'] = target
                     save_user_data(user_id, user_data, worksheet)
+                    print(f"対象者設定完了: {target}")
                     
-                    response = """ありがとうございます。
+                    # 子供の場合は学年を聞く
+                    if target in ['2', '3', '4']:  # 小学生、中学生、高校生
+                        print(f"学年質問を送信: カテゴリー{target}")
+                        if target == '2':
+                            response = """ありがとうございます。
+
+何年生ですか？
+1〜6の数字で答えてください。
+
+1. 小学1年
+2. 小学2年
+3. 小学3年
+4. 小学4年
+5. 小学5年
+6. 小学6年"""
+                        elif target == '3':
+                            response = """ありがとうございます。
+
+何年生ですか？
+1〜3の数字で答えてください。
+
+1. 中学1年
+2. 中学2年
+3. 中学3年"""
+                        elif target == '4':
+                            response = """ありがとうございます。
+
+何年生ですか？
+1〜3の数字で答えてください。
+
+1. 高校1年
+2. 高校2年
+3. 高校3年"""
+                        send_line_message(reply_token, response)
+                    else:
+                        print(f"学年質問スキップ: カテゴリー{target}")
+                        # 自分自身、または大学生・社会人の場合は学年不要
+                        response = """ありがとうございます。
 
 何に悩んでいますか？
 自由に答えてください。
 
-（例：子供が落ち着きがない、姿勢が悪い、シュートが入らない、など）"""
-                    send_line_message(reply_token, response)
+（例：落ち着きがない、姿勢が悪い、シュートが入らない、など）"""
+                        send_line_message(reply_token, response)
                 else:
                     response = """1〜5の数字で答えてください：
 
@@ -236,8 +275,73 @@ def callback():
                     send_line_message(reply_token, response)
                 continue
             
+            # 質問1-2: 学年（子供の場合のみ）
+            if user_data.get('concern_target') in ['2', '3', '4'] and not user_data.get('target_detail'):
+                print(f"質問1-2処理: 学年入力")
+                print(f"現在のconcern_target: {user_data.get('concern_target')}")
+                print(f"現在のtarget_detail: {user_data.get('target_detail')}")
+                
+                grade = user_message.strip()
+                target = user_data.get('concern_target')
+                
+                # 小学生: 1〜6
+                if target == '2' and grade in ['1', '2', '3', '4', '5', '6']:
+                    user_data['target_detail'] = f"小{grade}"
+                    save_user_data(user_id, user_data, worksheet)
+                    print(f"学年設定完了: 小{grade}")
+                    
+                    response = """ありがとうございます。
+
+何に悩んでいますか？
+自由に答えてください。
+
+（例：落ち着きがない、姿勢が悪い、シュートが入らない、など）"""
+                    send_line_message(reply_token, response)
+                
+                # 中学生: 1〜3
+                elif target == '3' and grade in ['1', '2', '3']:
+                    user_data['target_detail'] = f"中{grade}"
+                    save_user_data(user_id, user_data, worksheet)
+                    print(f"学年設定完了: 中{grade}")
+                    
+                    response = """ありがとうございます。
+
+何に悩んでいますか？
+自由に答えてください。
+
+（例：落ち着きがない、姿勢が悪い、シュートが入らない、など）"""
+                    send_line_message(reply_token, response)
+                
+                # 高校生: 1〜3
+                elif target == '4' and grade in ['1', '2', '3']:
+                    user_data['target_detail'] = f"高{grade}"
+                    save_user_data(user_id, user_data, worksheet)
+                    print(f"学年設定完了: 高{grade}")
+                    
+                    response = """ありがとうございます。
+
+何に悩んでいますか？
+自由に答えてください。
+
+（例：落ち着きがない、姿勢が悪い、シュートが入らない、など）"""
+                    send_line_message(reply_token, response)
+                
+                else:
+                    # 範囲外の数字
+                    print(f"学年入力エラー: grade={grade}, target={target}")
+                    if target == '2':
+                        response = """1〜6の数字で答えてください。"""
+                    else:
+                        response = """1〜3の数字で答えてください。"""
+                    send_line_message(reply_token, response)
+                continue
+            
             # 質問2: 悩みの内容
-            if not user_data.get('concern_description'):
+            if user_data.get('concern_target') and not user_data.get('concern_description'):
+                # 学年が必要なのに未入力の場合はスキップ
+                if user_data.get('concern_target') in ['2', '3', '4'] and not user_data.get('target_detail'):
+                    continue
+                
                 user_data['concern_description'] = user_message.strip()
                 save_user_data(user_id, user_data, worksheet)
                 
@@ -265,8 +369,8 @@ def callback():
 最後の質問です。
 
 今の悩み度を1〜10で教えてください。
-1=とても悪い
-10=とても良い"""
+1=とても良い
+10=とても悪い"""
                     send_line_message(reply_token, response)
                 else:
                     response = """1〜4の数字で答えてください：
@@ -286,39 +390,22 @@ def callback():
                     user_data['concern_date'] = str(datetime.now())
                     save_user_data(user_id, user_data, worksheet)
                     
-                    # LINE IDを埋め込んだアンケートURL
-                    survey_url = get_survey_url_with_user_id(user_id)
-                    
-                    response = f"""ありがとうございました。
+                    response = """ありがとうございました。
 記録しました。
 
 1ヶ月後に変化を確認させていただきます。
 
-初回アンケートはこちら：
-{survey_url}
+ご不明な点があれば、いつでもお聞きください。
 
-アンケート回答後、時間を置いてから相談すると返答に時間がかかることがあります。
-その際は数分程度置いてから、もう一度送信をお願いします。
-
-ご不明な点があれば、いつでもお聞きください。"""
+時間を置いてから相談すると返答に時間がかかることがあります。
+その際は数分程度置いてから、もう一度送信をお願いします。"""
                     send_line_message(reply_token, response)
                 else:
                     response = """1〜10の数字で答えてください。
 
-1=とても悪い
-10=とても良い"""
+1=とても良い
+10=とても悪い"""
                     send_line_message(reply_token, response)
-                continue
-            
-            # アンケート要求への応答
-            if 'アンケート' in user_message or '効果測定' in user_message:
-                survey_url = get_followup_survey_url_with_user_id(user_id)
-                response = f"""効果測定アンケートはこちらです：
-
-{survey_url}
-
-ご協力ありがとうございます。"""
-                send_line_message(reply_token, response)
                 continue
             
             # 通常の会話（登録完了後）
