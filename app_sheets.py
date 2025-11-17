@@ -277,6 +277,10 @@ def callback():
             
             # 質問1-2: 学年（子供の場合のみ）
             if user_data.get('concern_target') in ['2', '3', '4'] and not user_data.get('target_detail'):
+                print(f"質問1-2処理: 学年入力")
+                print(f"現在のconcern_target: {user_data.get('concern_target')}")
+                print(f"現在のtarget_detail: {user_data.get('target_detail')}")
+                
                 grade = user_message.strip()
                 target = user_data.get('concern_target')
                 
@@ -284,6 +288,7 @@ def callback():
                 if target == '2' and grade in ['1', '2', '3', '4', '5', '6']:
                     user_data['target_detail'] = f"小{grade}"
                     save_user_data(user_id, user_data, worksheet)
+                    print(f"学年設定完了: 小{grade}")
                     
                     response = """ありがとうございます。
 
@@ -297,6 +302,7 @@ def callback():
                 elif target == '3' and grade in ['1', '2', '3']:
                     user_data['target_detail'] = f"中{grade}"
                     save_user_data(user_id, user_data, worksheet)
+                    print(f"学年設定完了: 中{grade}")
                     
                     response = """ありがとうございます。
 
@@ -310,6 +316,7 @@ def callback():
                 elif target == '4' and grade in ['1', '2', '3']:
                     user_data['target_detail'] = f"高{grade}"
                     save_user_data(user_id, user_data, worksheet)
+                    print(f"学年設定完了: 高{grade}")
                     
                     response = """ありがとうございます。
 
@@ -321,6 +328,7 @@ def callback():
                 
                 else:
                     # 範囲外の数字
+                    print(f"学年入力エラー: grade={grade}, target={target}")
                     if target == '2':
                         response = """1〜6の数字で答えてください。"""
                     else:
@@ -387,10 +395,10 @@ def callback():
 
 1ヶ月後に変化を確認させていただきます。
 
-ご不明な点があれば、いつでもお聞きください。
-
 時間を置いてから相談すると返答に時間がかかることがあります。
-その際は数分程度置いてから、もう一度送信をお願いします。"""
+その際は数分程度置いてから、もう一度送信をお願いします。
+
+ご相談があれば、いつでもお聞きください。"""
                     send_line_message(reply_token, response)
                 else:
                     response = """1〜10の数字で答えてください。
